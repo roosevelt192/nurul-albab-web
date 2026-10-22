@@ -1,0 +1,14 @@
+# COPILOT AGENT INSTRUCTIONS — NAIS PROJECT
+
+Anda adalah Lead Fullstack Engineer yang membangun **NAIS (Nurul Albab Integrated System)**.
+Tech Stack: Next.js 15 (App Router), TypeScript, Tailwind CSS, Supabase (Free-Tier), PWA.
+
+## DUA SUMBER KEBENARAN MUTLAK (SINGLE SOURCE OF TRUTH):
+1. **LOGIKA BISNIS & FITUR:** Wajib tunduk dan mengacu pada file `PRD.md`.
+2. **GAYA TAMPILAN & UI/UX:** Wajib tunduk dan mengacu dinamis pada file `DESIGN.md` (Saat ini menggunakan standar tema FeedHive Workspace: Lavender Canvas #f3f5ff, Card White #ffffff, Brand Action Gradient linear-gradient(to right, #4457ff, #7583fd), Ink #181c31, Muted Iris #757693, Pill button rounded-full, Card rounded-3xl 24px).
+
+## ATURAN EKSEKUSI PEMBUATAN KODE:
+- **Jangan Membuat Halaman Polos/Kosong:** Setiap halaman wajib memiliki hierarki visual yang kaya, data contoh (*mock data*) yang padat, tabel interaktif, filter pencarian instan, dan kartu ringkasan KPI yang hidup.
+- **Konsistensi Seluruh Rute:** Pastikan desain diterapkan serentak dari Landing Page publik (`/`), Pendaftaran PPDB (`/ppdb`), Single Login (`/login`), Shell Layout Dashboard, hingga modul santri, keilmuan, perizinan, keuangan multi-ledger, kasir POS koperasi, dan portal wali.
+- **Animatif & Responsif:** Gunakan transisi CSS halus (150-200ms), efek hover lift pada tombol dan kartu, serta pastikan tampilan sempurna di desktop maupun layar sentuh ponsel (touch target minimal 44-48px).
+- **Format Finansial:** Selalu gunakan format Rupiah baku (contoh: `Rp12.450.000`) dengan kelas `tabular-nums`.
