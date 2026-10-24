@@ -50,6 +50,24 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+.float-card {
+  animation: float-card 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.float-card-delay {
+  animation-delay: -2.5s;
+}
+
+@keyframes float-card {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -5px, 0); }
+}
+
 .backdrop-enter {
   animation: backdrop-enter 160ms ease-out both;
 }
@@ -78,6 +96,14 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .float-card {
+    animation: none;
+  }
+
   .backdrop-enter,
   .modal-enter-up,
   .drawer-enter {

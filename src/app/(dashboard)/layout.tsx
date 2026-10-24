@@ -1,30 +1,107 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { AppHeader } from "@/components/app-header";
 import { Icon } from "@/components/icon";
 import { navigation } from "@/lib/navigation";
 import { createClient } from "@/lib/supabase/client";
+import type { Database, UserRole } from "@/types/database";
 
-function SidebarContent({ onNavigate }: { onNavigate: () => void }) {
+type SidebarBrand = Pick<
+  Database["public"]["Tables"]["pengaturan_pesantren"]["Row"],
+  "logo_url" | "logo_height" | "show_logo_sidebar"
+>;
+
+// Pemetaan izin menu berdasarkan peran pengguna
+const allowedHrefsByRole: Record<UserRole, string[]> = {
+  super_admin: [
+    "/dashboard",
+    "/santri",
+    "/keilmuan",
+    "/perizinan",
+    "/keuangan",
+    "/koperasi",
+    "/koperasi/stok",
+    "/koperasi/laporan",
+    "/portal-wali",
+    "/pengaturan",
+  ],
+  bendahara: [
+    "/keuangan",
+    "/koperasi",
+    "/koperasi/stok",
+    "/koperasi/laporan",
+    "/portal-wali",
+  ],
+  staf: [
+    "/keilmuan",
+    "/santri",
+    "/perizinan",
+    "/portal-wali",
+  ],
+  wali_santri: [
+    "/portal-wali",
+  ],
+};
+
+function SidebarContent({
+  onNavigate,
+  brand,
+  currentRole,
+}: {
+  onNavigate: () => void;
+  brand: SidebarBrand | null;
+  currentRole: UserRole | null;
+}) {
   const pathname = usePathname();
+  const allowedHrefs = currentRole ? allowedHrefsByRole[currentRole] ?? [] : [];
+
+  // Filter navigasi berdasarkan hak akses peran pengguna
+  const filteredNavigation = navigation
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        allowedHrefs.some(
+          (allowed) => item.href === allowed || item.href.startsWith(`${allowed}/`)
+        )
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  const homeHref = currentRole === "bendahara" ? "/keuangan" : currentRole === "staf" ? "/keilmuan" : "/dashboard";
 
   return (
     <div className="flex h-full flex-col">
-      <Link href="/dashboard" onClick={onNavigate} className="flex items-center gap-3 px-2 py-2">
-        <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#4457ff] to-[#7583fd] text-white">
-          <Icon name="sparkles" size={20} />
-        </span>
+      <Link href={homeHref} onClick={onNavigate} className="flex items-center gap-3 px-2 py-2">
+        {brand?.show_logo_sidebar !== false && (
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#eef0ff]">
+            {brand?.logo_url ? (
+              <Image
+                src={brand.logo_url}
+                alt="Logo lembaga"
+                width={56}
+                height={56}
+                unoptimized
+                className={`w-auto max-w-full object-contain ${brand.logo_height ?? "h-10"}`}
+              />
+            ) : (
+              <span className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#4457ff] to-[#7583fd] text-white">
+                <Icon name="sparkles" size={20} />
+              </span>
+            )}
+          </span>
+        )}
         <span>
           <span className="block text-sm font-bold tracking-tight text-[#181c31]">NAIS</span>
           <span className="block text-[11px] font-medium text-[#757693]">Nurul Albab System</span>
         </span>
       </Link>
 
-      <div className="mt-8 flex-1 space-y-7 overflow-y-auto">
-        {navigation.map((group) => (
+      <div className="mt-8 flex-1 space-y-7 overflow-y-auto pr-1">
+        {filteredNavigation.map((group) => (
           <section key={group.label} aria-label={group.label}>
             <h2 className="px-3 text-[10px] font-bold tracking-[0.14em] text-[#a2a3b7]">{group.label}</h2>
             <nav className="mt-2 space-y-1">
@@ -70,12 +147,15 @@ function SidebarContent({ onNavigate }: { onNavigate: () => void }) {
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [accountName, setAccountName] = useState("Akun NAIS");
+  const [accountName, setAccountName] = useState("Memuat akun…");
   const [accountEmail, setAccountEmail] = useState("");
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [sidebarBrand, setSidebarBrand] = useState<SidebarBrand | null>(null);
   const pathname = usePathname();
   const router = useRouter();
+
   const activePage =
     navigation
       .flatMap((group) => group.items)
@@ -83,31 +163,77 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       ?.label ?? "Workspace";
 
   useEffect(() => {
+    let active = true;
     const supabase = createClient();
+
+    async function loadUserProfile() {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (!active || authError || !authData.user) return;
+
+        const email = authData.user.email ?? "";
+        setAccountEmail(email);
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("nama_lengkap, full_name, role")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        if (!active) return;
+
+        if (profile) {
+          const finalName = profile.nama_lengkap || profile.full_name || email.split("@")[0] || "Pengguna";
+          setAccountName(finalName);
+          setCurrentRole((profile.role as UserRole) || (email.includes("admin") ? "super_admin" : "staf"));
+        } else {
+          setAccountName(email.split("@")[0] || "Pengguna");
+          setCurrentRole(email.includes("admin") ? "super_admin" : "staf");
+        }
+      } catch (err) {
+        console.warn("Gagal memuat profil pengguna:", err);
+      }
+    }
+
+    void loadUserProfile();
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const emailName = session?.user.email?.split("@")[0];
-      setAccountEmail(session?.user.email ?? "");
-      setAccountName(emailName || "Akun NAIS");
+      if (!session) {
+        setAccountEmail("");
+        setAccountName("Akun NAIS");
+        setCurrentRole(null);
+      } else {
+        void loadUserProfile();
+      }
     });
 
-    void supabase.auth.getUser().then(({ data }) => {
-      const user = data.user;
-      if (!user) return;
-      const metadataName =
-        user.user_metadata?.nama_lengkap ??
-        user.user_metadata?.full_name ??
-        user.user_metadata?.name;
-      setAccountEmail(user.email ?? "");
-      setAccountName(
-        typeof metadataName === "string" && metadataName
-          ? metadataName
-          : user.email?.split("@")[0] || "Akun NAIS",
-      );
-    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
-    return () => subscription.unsubscribe();
+  useEffect(() => {
+    let active = true;
+    async function loadBrand() {
+      const { data, error } = await createClient()
+        .from("pengaturan_pesantren")
+        .select("logo_url, logo_height, show_logo_sidebar")
+        .limit(1)
+        .maybeSingle();
+      if (!active) return;
+      if (error) {
+        console.warn("Unable to load sidebar logo settings.", error.message);
+        return;
+      }
+      setSidebarBrand(data);
+    }
+    void loadBrand();
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function handleSignOut() {
@@ -125,7 +251,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       router.refresh();
     } catch (error) {
       setAuthMessage(
-        error instanceof Error ? error.message : "Terjadi kesalahan saat mengakhiri sesi.",
+        error instanceof Error ? error.message : "Terjadi kesalahan saat mengakhiri sesi."
       );
     } finally {
       setIsSigningOut(false);
@@ -144,7 +270,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       )}
 
       <aside className="fixed bottom-4 left-4 top-4 z-20 hidden w-[260px] rounded-3xl border border-[#e5e7eb] bg-white p-5 md:block">
-        <SidebarContent onNavigate={() => setDrawerOpen(false)} />
+        <SidebarContent
+          onNavigate={() => setDrawerOpen(false)}
+          brand={sidebarBrand}
+          currentRole={currentRole}
+        />
       </aside>
 
       <aside
@@ -166,7 +296,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <Icon name="close" size={19} />
           </button>
         </div>
-        <SidebarContent onNavigate={() => setDrawerOpen(false)} />
+        <SidebarContent
+          onNavigate={() => setDrawerOpen(false)}
+          brand={sidebarBrand}
+          currentRole={currentRole}
+        />
       </aside>
 
       <div className="min-h-screen md:pl-[292px]">

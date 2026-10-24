@@ -72,7 +72,7 @@ export function PillTabs<T extends string>({
           type="button"
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
-          className={`min-h-10 rounded-full px-4 text-xs font-semibold transition duration-150 ${
+          className={`min-h-[44px] rounded-full px-4 text-xs font-semibold transition-all duration-300 ${
             value === option.value ? "bg-white text-[#4457ff] shadow-sm" : "text-[#757693] hover:text-[#181c31]"
           }`}
         >

@@ -22,7 +22,7 @@ export type OperationalAlert = {
  * yang hanya mengisi salah satu pasangan kolom.
  */
 export const PRODUCT_ALERT_COLUMNS =
-  "id, name, nama_produk, sku, kode_barang, stock, stok, min_stock, min_stok, is_active, unit, satuan, category, kategori, cost_price, hpp, selling_price, harga_jual";
+  "id, name, nama_produk, sku, kode_barang, stock, stok, min_stock, min_stok, is_active";
 
 export const ALERTS_REFRESH_EVENT = "nais:alerts-refresh";
 
@@ -44,7 +44,13 @@ export function buildStockAlerts(
 ): OperationalAlert[] {
   const alerts = (rows ?? [])
     .filter((row) => row.is_active !== false)
-    .map((row) => normalizeProduct(row))
+    .map((row) => {
+      const product = normalizeProduct(row);
+      const title = [row.nama_produk, row.name, row.sku].find(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      );
+      return { ...product, name: title?.trim() || "Produk" };
+    })
     .filter((product) => product.stock <= product.min_stock)
     .map((product) => {
       const empty = product.stock <= 0;
@@ -112,8 +118,7 @@ export async function fetchOperationalAlerts(supabase: SupabaseClient): Promise<
   const [primaryProducts, permitResult, studentResult] = await Promise.all([
     supabase
       .from("produk_koperasi")
-      .select(PRODUCT_ALERT_COLUMNS)
-      .or("is_active.is.null,is_active.eq.true"),
+      .select(PRODUCT_ALERT_COLUMNS),
     supabase
       .from("perizinan_santri")
       .select("id, santri_id, batas_kembali, alasan_izin, kedatangan_aktual, status")
@@ -124,7 +129,7 @@ export async function fetchOperationalAlerts(supabase: SupabaseClient): Promise<
 
   let productRows: Array<Record<string, unknown>> = [];
   if (primaryProducts.error) {
-    // Jaga kompatibilitas bila PostgREST belum mengenali filter kolom aktif.
+    // Jaga kompatibilitas bila PostgREST belum mengenali kolom alias pada skema lama.
     const fallbackProducts = await supabase.from("produk_koperasi").select("*");
     if (fallbackProducts.error) {
       errors.push(fallbackProducts.error.message);

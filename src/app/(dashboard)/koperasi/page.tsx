@@ -6,6 +6,7 @@ import { Icon } from "@/components/icon";
 import { CooperativeNav } from "@/components/cooperative-nav";
 import { FormMessage, PageHeading, PrimaryButton } from "@/components/workspace-ui";
 import { formatRupiah } from "@/lib/format";
+import { getProductCategoryIcon, type ProductCategoryIcon } from "@/lib/cooperative-category-icons";
 import { createClient } from "@/lib/supabase/client";
 
 export interface PosProduct {
@@ -38,15 +39,6 @@ type Receipt = {
 const categories = ["Semua", "Alat Tulis", "Kitab", "Makanan/Minuman", "Seragam", "Lainnya"];
 const quickCash = [10000, 20000, 50000, 100000];
 const inputClass = "min-h-12 w-full rounded-xl border border-[#e5e7eb] bg-white px-3.5 text-sm text-[#181c31] outline-none focus:border-[#4457ff] focus:ring-2 focus:ring-[#4457ff]/10";
-
-function iconForCategory(category: string) {
-  const normalized = category.toLowerCase();
-  if (normalized.includes("kitab") || normalized.includes("buku")) return "📚";
-  if (normalized.includes("makan") || normalized.includes("minum")) return "🥤";
-  if (normalized.includes("seragam")) return "👕";
-  if (normalized.includes("tulis") || normalized.includes("atk")) return "✏️";
-  return "🛍️";
-}
 
 function categorize(value: string) {
   const category = (value || "").toLowerCase();
@@ -86,6 +78,7 @@ export default function CooperativePosPage() {
   const [buyerSearch, setBuyerSearch] = useState("");
   const [selectedBuyer, setSelectedBuyer] = useState("");
   const [category, setCategory] = useState("Semua");
+  const [categoryIcons, setCategoryIcons] = useState<Record<string, ProductCategoryIcon>>({});
   const [cashInput, setCashInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPaying, setIsPaying] = useState(false);
@@ -115,6 +108,14 @@ export default function CooperativePosPage() {
       });
 
     const [productResult, studentResult] = await Promise.all([productQuery, studentsPromise]);
+    const { data: categoryData, error: categoryError } = await supabase
+      .from("kategori_produk")
+      .select("name, icon");
+    if (categoryError) {
+      console.warn("Unable to load category icons for the point of sale.", categoryError.message);
+    } else {
+      setCategoryIcons(Object.fromEntries((categoryData ?? []).map((item) => [item.name, item.icon])));
+    }
 
     if (productResult.error) {
       console.error("Gagal memuat produk koperasi:", productResult.error);
@@ -333,7 +334,7 @@ export default function CooperativePosPage() {
                         unoptimized
                         className="size-full object-cover"
                       />
-                    ) : iconForCategory(product.category)}
+                    ) : <Icon name={getProductCategoryIcon(product.category, categoryIcons[product.category])} size={22} className="text-[#4457ff]" />}
                   </span>
                   <span className="mt-3 line-clamp-2 text-xs font-bold leading-5">{product.name}</span>
                   <span className="mt-1 text-sm font-bold tabular-nums text-[#4457ff]">{formatRupiah(Number(product.selling_price))}</span>

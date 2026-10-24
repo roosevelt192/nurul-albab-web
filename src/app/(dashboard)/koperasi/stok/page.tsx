@@ -14,6 +14,7 @@ import {
 import * as XLSX from "xlsx-js-style";
 import { CooperativeNav } from "@/components/cooperative-nav";
 import { Icon } from "@/components/icon";
+import { getProductCategoryIcon, type ProductCategoryIcon } from "@/lib/cooperative-category-icons";
 import {
   Field,
   FormMessage,
@@ -83,6 +84,17 @@ const inputClass =
   "min-h-11 w-full rounded-xl border border-[#e5e7eb] bg-white px-3.5 text-sm outline-none focus:border-[#4457ff] focus:ring-2 focus:ring-[#4457ff]/10";
 
 const defaultCategories = ["Alat Tulis", "Kitab", "Makanan/Minuman", "Seragam", "Lainnya"];
+type ProductCategory = { id: string; name: string; icon: ProductCategoryIcon };
+const categoryIconOptions: { value: ProductCategoryIcon; label: string }[] = [
+  { value: "utensils-crossed", label: "Makanan" },
+  { value: "pencil", label: "Alat tulis" },
+  { value: "book-open", label: "Kitab" },
+  { value: "shirt", label: "Seragam" },
+  { value: "package", label: "Paket" },
+  { value: "coffee", label: "Minuman" },
+  { value: "apple", label: "Buah" },
+  { value: "backpack", label: "Perlengkapan" },
+];
 
 const skuPrefixes: Record<string, string> = {
   "Alat Tulis": "ATK-",
@@ -90,14 +102,6 @@ const skuPrefixes: Record<string, string> = {
   "Makanan/Minuman": "MKN-",
   Seragam: "SRG-",
   Lainnya: "BRG-",
-};
-
-const categoryEmoji: Record<string, string> = {
-  "Alat Tulis": "✏️",
-  Kitab: "📚",
-  "Makanan/Minuman": "🥤",
-  Seragam: "👕",
-  Lainnya: "🛍️",
 };
 
 const headerStyle: XLSX.CellStyle = {
@@ -188,10 +192,6 @@ function parseImportNumber(value: unknown): number {
   return negative ? -parsed : parsed;
 }
 
-function getCategoryEmoji(category: string): string {
-  return categoryEmoji[category] ?? "🛍️";
-}
-
 function generateSku(category: string, existing: UnifiedProduct[]): string {
   const prefix = skuPrefixes[category] ?? "BRG-";
   const count = existing.filter((p) => p.category === category).length;
@@ -232,7 +232,14 @@ export default function StokPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [categories, setCategories] = useState<string[]>(defaultCategories);
+  const [categories, setCategories] = useState<ProductCategory[]>(
+    defaultCategories.map((name) => ({
+      id: name,
+      name,
+      icon: getProductCategoryIcon(name) as ProductCategoryIcon,
+    })),
+  );
+  const [newCategoryIcon, setNewCategoryIcon] = useState<ProductCategoryIcon>("package");
 
   // Kode SKU (kontrol agar terisi ulang otomatis saat kategori berubah di mode Tambah)
   const [sku, setSku] = useState("");
@@ -287,19 +294,34 @@ export default function StokPage() {
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from("produk_koperasi")
-      .select("*")
-      .or("is_active.is.null,is_active.eq.true");
+    const [productResult, categoryResult] = await Promise.all([
+      supabase.from("produk_koperasi").select("*").or("is_active.is.null,is_active.eq.true"),
+      supabase.from("kategori_produk").select("*").order("name"),
+    ]);
 
-    if (error) {
-      console.error("Gagal memuat inventori koperasi:", error);
-      setMessage(`Data stok gagal dimuat: ${error.message}`);
+    if (productResult.error) {
+      console.error("Gagal memuat inventori koperasi:", productResult.error);
+      setMessage(`Data stok gagal dimuat: ${productResult.error.message}`);
     } else {
-      const mapped = (data ?? []).map(mapToUnified);
+      const mapped = (productResult.data ?? []).map(mapToUnified);
       mapped.sort((a, b) => a.name.localeCompare(b.name, "id-ID"));
       setProducts(mapped);
-      setMessage("");
+      if (categoryResult.error) {
+        console.error("Gagal memuat kategori produk:", categoryResult.error);
+        setMessage(`Kategori produk gagal dimuat: ${categoryResult.error.message}`);
+      } else {
+        const loadedCategories = (categoryResult.data ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+          icon: item.icon,
+        }));
+        setCategories(loadedCategories.length ? loadedCategories : defaultCategories.map((name) => ({
+          id: name,
+          name,
+          icon: getProductCategoryIcon(name) as ProductCategoryIcon,
+        })));
+        setMessage("");
+      }
     }
     setIsLoading(false);
   }, []);
@@ -335,7 +357,8 @@ export default function StokPage() {
   const stockValue = products.reduce((sum, p) => sum + p.stock * p.cost_price, 0);
 
   function openEditor(product: UnifiedProduct | null) {
-    const selectedCategory = product?.category ?? category;
+    const selectedCategory = product?.category ??
+      (category === "Semua kategori" ? categories[0]?.name ?? "Lainnya" : category);
     setCategory(selectedCategory);
     const nextSku = product?.sku ?? generateSku(selectedCategory, products);
     setSku(nextSku);
@@ -372,11 +395,14 @@ export default function StokPage() {
 
     // Resolve kategori akhir: jika "Lainnya" dan ada input custom, gunakan custom category
     let finalCategory = selectedCategory;
+    let customCategoryRecord: ProductCategory | null = null;
     if (selectedCategory === "Lainnya" && enteredCustomCategory) {
       finalCategory = enteredCustomCategory;
-      if (!categories.includes(finalCategory)) {
-        setCategories((prev) => [...prev, finalCategory]);
-      }
+      customCategoryRecord = {
+        id: finalCategory,
+        name: finalCategory,
+        icon: newCategoryIcon,
+      };
     }
 
     // Resolve SKU: mode create & kosong → generate otomatis; mode edit & kosong → generate; mode edit & diisi → biarkan lama
@@ -403,6 +429,20 @@ export default function StokPage() {
 
     setIsSaving(true);
     const supabase = createClient();
+    if (customCategoryRecord && !categories.some((item) => item.name === customCategoryRecord?.name)) {
+      const { data: savedCategory, error: categoryError } = await supabase
+        .from("kategori_produk")
+        .upsert({ name: customCategoryRecord.name, icon: customCategoryRecord.icon }, { onConflict: "name" })
+        .select("*")
+        .single();
+      if (categoryError) {
+        console.error("Gagal menyimpan kategori produk:", categoryError);
+        setMessage(`Kategori produk gagal disimpan: ${categoryError.message}`);
+        setIsSaving(false);
+        return;
+      }
+      setCategories((current) => [...current.filter((item) => item.name !== savedCategory.name), savedCategory]);
+    }
 
     // Resolve image_url: prioritas file upload, lalu URL manual, lalu pertahankan lama (mode edit)
     let finalImageUrl: string | null = enteredImageUrl;
@@ -963,7 +1003,7 @@ export default function StokPage() {
           <Field label="Kategori" name="category" value={category} onChange={setCategory}>
             <option>Semua kategori</option>
             {categories.map((item) => (
-              <option key={item}>{item}</option>
+              <option key={item.id}>{item.name}</option>
             ))}
           </Field>
           <Field label="Status stok" name="stock" value={stockFilter} onChange={setStockFilter}>
@@ -1032,7 +1072,7 @@ export default function StokPage() {
                             className="size-8 rounded-lg object-cover"
                           />
                         ) : (
-                          <span className="text-[14px]">{getCategoryEmoji(product.category)}</span>
+                          <Icon name={getProductCategoryIcon(product.category, categories.find((item) => item.name === product.category)?.icon)} size={16} className="text-[#4457ff]" />
                         )}
                       </div>
                     </td>
@@ -1046,7 +1086,7 @@ export default function StokPage() {
                     </td>
                     <td className="px-4 py-3.5 sm:px-5">
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                        <span aria-hidden="true">{getCategoryEmoji(product.category)}</span>
+                        <Icon name={getProductCategoryIcon(product.category, categories.find((item) => item.name === product.category)?.icon)} size={13} className="text-[#4457ff]" />
                         {product.category}
                       </span>
                     </td>
@@ -1158,7 +1198,7 @@ export default function StokPage() {
                         className="size-9 rounded-lg object-cover"
                       />
                     ) : (
-                      <span className="text-[15px]">{getCategoryEmoji(product.category)}</span>
+                      <Icon name={getProductCategoryIcon(product.category, categories.find((item) => item.name === product.category)?.icon)} size={17} className="text-[#4457ff]" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1181,7 +1221,7 @@ export default function StokPage() {
                       />
                     </div>
                     <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                      <span aria-hidden="true">{getCategoryEmoji(product.category)}</span>
+                      <Icon name={getProductCategoryIcon(product.category, categories.find((item) => item.name === product.category)?.icon)} size={13} className="text-[#4457ff]" />
                       {product.category}
                     </span>
                   </div>
@@ -1309,17 +1349,37 @@ export default function StokPage() {
               <Field label="Nama produk" name="name" placeholder="Buku tulis 38 lembar" defaultValue={editor.product?.name} required />
               {/* Kategori + input custom saat "Lainnya" */}
               <div className="col-span-2 sm:col-span-1">
-                <Field label="Kategori" name="category" defaultValue={editor.product?.category ?? categories[0]} onChange={handleEditorCategoryChange}>
+                <Field label="Kategori" name="category" defaultValue={editor.product?.category ?? categories[0]?.name ?? "Lainnya"} onChange={handleEditorCategoryChange}>
                   {categories.map((item) => (
-                    <option key={item}>{item}</option>
+                    <option key={item.id}>{item.name}</option>
                   ))}
                 </Field>
                 {category === "Lainnya" && (
-                  <Field
-                    label="Keterangan Kategori Baru"
-                    name="custom_category"
-                    placeholder="Misal: Alat Olahraga"
-                  />
+                  <>
+                    <Field
+                      label="Keterangan Kategori Baru"
+                      name="custom_category"
+                      placeholder="Misal: Alat Olahraga"
+                    />
+                    <fieldset className="mt-3">
+                      <legend className="text-[11px] font-semibold text-[#55566f]">Ikon kategori</legend>
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        {categoryIconOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setNewCategoryIcon(option.value)}
+                            aria-label={option.label}
+                            aria-pressed={newCategoryIcon === option.value}
+                            title={option.label}
+                            className={`flex min-h-10 items-center justify-center rounded-xl border transition-colors ${newCategoryIcon === option.value ? "border-[#4457ff] bg-[#eef0ff] text-[#4457ff]" : "border-[#e5e7eb] bg-white text-[#757693] hover:border-[#cbd0ff]"}`}
+                          >
+                            <Icon name={option.value} size={18} />
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  </>
                 )}
               </div>
               <Field label="Satuan" name="unit" placeholder="pcs / botol / buku" defaultValue={editor.product?.unit ?? "pcs"} required />

@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import Image from "next/image";
 import { Icon } from "@/components/icon";
 import { FormMessage, MetricCard, PageHeading, PillTabs, PrimaryButton, StatusBadge } from "@/components/workspace-ui";
 import { formatRupiah } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/types/database";
 
 export interface UnifiedAccount {
   id: string;
@@ -58,6 +60,10 @@ export interface UnifiedCashEntry {
 }
 
 type Student = { id: string; nis: string | null; nama_lengkap: string; status: string };
+type ReceiptInstitution = Pick<
+  Database["public"]["Tables"]["pengaturan_pesantren"]["Row"],
+  "nama_pesantren" | "alamat" | "logo_url" | "logo_size" | "logo_height" | "show_logo_kuitansi" | "footer_kuitansi"
+>;
 type RawFinanceRow = Record<string, unknown>;
 type FinanceTab = "cash" | "invoices";
 type Modal = "movement" | "invoice" | "payment" | null;
@@ -186,6 +192,7 @@ export default function KeuanganPage() {
   const [payments, setPayments] = useState<UnifiedPayment[]>([]);
   const [cashEntries, setCashEntries] = useState<UnifiedCashEntry[]>([]);
   const [profiles, setProfiles] = useState<Map<string, string>>(new Map());
+  const [receiptInstitution, setReceiptInstitution] = useState<ReceiptInstitution | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -216,7 +223,7 @@ export default function KeuanganPage() {
     const supabase = createClient();
 
     // Query data secara aman tanpa klausa .order kolom kaku
-    const [accountResult, componentResult, studentResult, invoiceResult, paymentResult, cashResult] = await Promise.all([
+    const [accountResult, componentResult, studentResult, invoiceResult, paymentResult, cashResult, institutionResult] = await Promise.all([
       supabase.from("rekening_kas").select("*").eq("is_active", true),
       supabase.from("komponen_iuran").select("*").eq("is_active", true),
       supabase.rpc("finance_list_students").then(async (res) => {
@@ -228,7 +235,14 @@ export default function KeuanganPage() {
       supabase.from("tagihan_santri").select("*"),
       supabase.from("pembayaran_iuran").select("*"),
       supabase.from("jurnal_kas").select("*"),
+      supabase.from("pengaturan_pesantren").select("nama_pesantren, alamat, logo_url, logo_size, logo_height, show_logo_kuitansi, footer_kuitansi").limit(1).maybeSingle(),
     ]);
+    if (institutionResult.error) {
+      console.warn("Unable to load institution branding for receipts.", institutionResult.error.message);
+      setReceiptInstitution(null);
+    } else {
+      setReceiptInstitution(institutionResult.data);
+    }
 
     // Normalisasi Rekening Kas
     const mappedAccounts: UnifiedAccount[] = ((accountResult.data ?? []) as unknown as RawFinanceRow[]).map((a) => ({
@@ -761,7 +775,22 @@ export default function KeuanganPage() {
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#181c31]/35 p-4 backdrop-blur-sm print:static print:block print:bg-white print:p-0">
           <section className="w-full max-w-md rounded-3xl border border-[#e5e7eb] bg-white p-6 shadow-[0_24px_80px_rgba(24,28,49,0.18)] print:max-w-none print:border-0 print:p-0 print:shadow-none">
             <div className="receipt-print mx-auto max-w-sm">
-              <div className="text-center"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4457ff]">Pondok Pesantren</p><h2 className="mt-1 text-xl font-bold">Nurul Albab</h2><p className="mt-1 text-[10px] text-[#757693]">Kuitansi pembayaran iuran santri</p></div>
+              <div className="text-center">
+                {receiptInstitution?.show_logo_kuitansi && receiptInstitution.logo_url && (
+                  <Image
+                    src={receiptInstitution.logo_url}
+                    alt={`Logo ${receiptInstitution.nama_pesantren}`}
+                    width={96}
+                    height={96}
+                    unoptimized
+                    className={`mx-auto mb-2 w-auto max-w-full object-contain ${receiptInstitution.logo_height}`}
+                  />
+                )}
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#4457ff]">Pondok Pesantren</p>
+                <h2 className="mt-1 text-xl font-bold">{receiptInstitution?.nama_pesantren ?? "Nurul Albab"}</h2>
+                {receiptInstitution?.alamat && <p className="mt-1 text-[10px] text-[#757693]">{receiptInstitution.alamat}</p>}
+                <p className="mt-1 text-[10px] text-[#757693]">Kuitansi pembayaran iuran santri</p>
+              </div>
               <div className="my-5 border-y border-dashed border-[#cfd2e3] py-4 text-xs">
                 <ReceiptRow label="Santri" value={paymentStudent?.nama_lengkap ?? "—"} />
                 <ReceiptRow label="NIS" value={paymentStudent?.nis ?? "—"} />
@@ -772,7 +801,7 @@ export default function KeuanganPage() {
                 <ReceiptRow label="Petugas" value={selectedPayment.received_by ? profiles.get(selectedPayment.received_by) ?? `Petugas (${selectedPayment.received_by.slice(0, 8)})` : "Petugas"} />
                 <ReceiptRow label="Metode" value={selectedPayment.method === "tunai" ? "Tunai" : "Transfer"} />
               </div>
-              <p className="text-center text-[10px] text-[#8a8ba2]">Simpan bukti ini sebagai arsip pembayaran.</p>
+              <p className="text-center text-[10px] text-[#8a8ba2]">{receiptInstitution?.footer_kuitansi || "Simpan bukti ini sebagai arsip pembayaran."}</p>
             </div>
             <div className="mt-5 flex justify-end gap-2 print:hidden"><button type="button" onClick={() => setSelectedPayment(null)} className="min-h-10 rounded-full px-4 text-xs font-semibold text-[#757693] hover:bg-[#f3f5ff]">Tutup</button><PrimaryButton onClick={() => window.print()}><Icon name="receipt" size={15} /> Cetak Kuitansi</PrimaryButton></div>
           </section>

@@ -9,6 +9,13 @@ export type PermitStatus = "diajukan" | "disetujui" | "sedang_di_luar" | "kembal
 export type CashEntryType = "debit" | "kredit";
 export type ChargeCategory = "pribadi" | "bersama";
 export type PaymentMethod = "tunai" | "transfer";
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
 
 type TableShape<Row, Insert, Update = Partial<Insert>> = {
   Row: Row;
@@ -29,14 +36,84 @@ export type Database = {
         {
           id: string;
           nama_lengkap: string;
+          full_name: string | null;
           role: UserRole;
           no_hp: string | null;
+          is_active: boolean;
         },
         {
           id: string;
           nama_lengkap: string;
+          full_name?: string | null;
           role: UserRole;
           no_hp?: string | null;
+          is_active?: boolean;
+        }
+      >;
+      pengaturan_pesantren: TableShape<
+        {
+          id: string;
+          nama_pesantren: string;
+          pengasuh: string;
+          alamat: string;
+          telepon: string;
+          email: string;
+          logo_url: string | null;
+          logo_size: "small" | "medium" | "proportional";
+          logo_height: "h-8" | "h-10" | "h-14";
+          logo_options: Json;
+          show_logo_navbar: boolean;
+          show_logo_sidebar: boolean;
+          show_logo_kuitansi: boolean;
+          footer_kuitansi: string;
+          pos_printer_width: string;
+          updated_at: string;
+          hero_badge: string;
+          hero_title: string;
+          hero_subtitle: string;
+          hero_quote: string;
+          hero_quote_source: string;
+          tentang_title: string;
+          tentang_deskripsi: string;
+          ppdb_gelombang: string;
+          ppdb_status: string;
+          ppdb_brosur_url: string;
+          whatsapp_center: string;
+          jam_operasional: string;
+          alamat_lengkap: string;
+          sosmed_instagram: string;
+        },
+        {
+          id?: string;
+          nama_pesantren?: string;
+          pengasuh?: string;
+          alamat?: string;
+          telepon?: string;
+          email?: string;
+          logo_url?: string | null;
+          logo_size?: "small" | "medium" | "proportional";
+          logo_height?: "h-8" | "h-10" | "h-14";
+          logo_options?: Json;
+          show_logo_navbar?: boolean;
+          show_logo_sidebar?: boolean;
+          show_logo_kuitansi?: boolean;
+          footer_kuitansi?: string;
+          pos_printer_width?: string;
+          updated_at?: string;
+          hero_badge?: string;
+          hero_title?: string;
+          hero_subtitle?: string;
+          hero_quote?: string;
+          hero_quote_source?: string;
+          tentang_title?: string;
+          tentang_deskripsi?: string;
+          ppdb_gelombang?: string;
+          ppdb_status?: string;
+          ppdb_brosur_url?: string;
+          whatsapp_center?: string;
+          jam_operasional?: string;
+          alamat_lengkap?: string;
+          sosmed_instagram?: string;
         }
       >;
       santri: TableShape<
@@ -401,6 +478,20 @@ export type Database = {
           satuan?: string | null;
         }
       >;
+      kategori_produk: TableShape<
+        {
+          id: string;
+          name: string;
+          icon: "utensils-crossed" | "pencil" | "book-open" | "shirt" | "package" | "coffee" | "apple" | "backpack";
+          created_at: string;
+        },
+        {
+          id?: string;
+          name: string;
+          icon?: "utensils-crossed" | "pencil" | "book-open" | "shirt" | "package" | "coffee" | "apple" | "backpack";
+          created_at?: string;
+        }
+      >;
       penjualan_koperasi: TableShape<
         {
           id: string;
@@ -570,11 +661,34 @@ export type Database = {
         Args: { p_profile_ids: string[] };
         Returns: { id: string; nama_lengkap: string }[];
       };
+      has_system_admin_access: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      list_profile_access: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          id: string;
+          nama_lengkap: string;
+          full_name: string | null;
+          role: string;
+          is_active: boolean;
+        }[];
+      };
+      manage_profile_access: {
+        Args: { p_profile_id: string; p_role: string; p_is_active: boolean; p_full_name?: string | null };
+        Returns: undefined;
+      };
+      get_portal_wali_data: {
+        Args: { p_nis: string; p_tgl_lahir: string };
+        Returns: Json;
+      };
       approve_ppdb_pendaftar: {
         Args: { p_santri_id: string; p_class: string; p_room: string };
         Returns: string;
       };
     };
+
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

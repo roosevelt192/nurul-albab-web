@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { CooperativeNav } from "@/components/cooperative-nav";
 import { Icon } from "@/components/icon";
 import { FormMessage, MetricCard, PageHeading, PillTabs, StatusBadge } from "@/components/workspace-ui";
@@ -10,7 +10,7 @@ import type { Database } from "@/types/database";
 
 type Sale = Database["public"]["Tables"]["transaksi_penjualan"]["Row"];
 type SaleLine = Database["public"]["Tables"]["transaksi_penjualan_detail"]["Row"];
-type Period = "today" | "month" | "all";
+type Period = "today" | "week" | "month" | "all" | "custom";
 const shuAllocations = [
   { label: "Subsidi operasional pondok", percent: 40, color: "bg-[#4457ff]", tone: "text-[#4457ff]" },
   { label: "Tambahan modal koperasi", percent: 30, color: "bg-[#7583fd]", tone: "text-[#5d69d7]" },
@@ -46,9 +46,16 @@ export default function CooperativeReportPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [today, setToday] = useState("");
+  const [referenceTime, setReferenceTime] = useState(0);
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
+  const [appliedRange, setAppliedRange] = useState<{ start: string; end: string } | null>(null);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setToday(localDate()), 0);
+    const timer = window.setTimeout(() => {
+      setToday(localDate());
+      setReferenceTime(Date.now());
+    }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -114,12 +121,23 @@ export default function CooperativeReportPage() {
   }, [loadSales]);
 
   const filteredSales = useMemo(() => sales.filter((sale) => {
-    if (!today || period === "all") return true;
+    if (period === "all") return true;
+    if (period === "week") {
+      const timestamp = sale.created_at ?? sale.sold_at;
+      return referenceTime > 0 && Boolean(timestamp) &&
+        new Date(timestamp).getTime() >= referenceTime - 7 * 24 * 60 * 60 * 1000;
+    }
+    if (period === "custom") {
+      if (!appliedRange) return false;
+      const soldDate = dateInJakarta(sale.sold_at);
+      return soldDate >= appliedRange.start && soldDate <= appliedRange.end;
+    }
+    if (!today) return false;
     const soldDate = dateInJakarta(sale.sold_at);
     if (period === "today") return soldDate === today;
     if (period === "month") return soldDate.slice(0, 7) === today.slice(0, 7);
     return true;
-  }), [period, sales, today]);
+  }), [appliedRange, period, referenceTime, sales, today]);
   const revenue = filteredSales.reduce((sum, sale) => sum + Number(sale.total_amount), 0);
   const cost = filteredSales.reduce((sum, sale) => sum + Number(sale.total_cost), 0);
   const profit = revenue - cost;
@@ -133,21 +151,59 @@ export default function CooperativeReportPage() {
 
   const periodOptions = [
     { value: "today" as const, label: "Hari Ini" },
+    { value: "week" as const, label: "Minggu Ini" },
     { value: "month" as const, label: "Bulan Ini" },
     { value: "all" as const, label: "Semua" },
+    { value: "custom" as const, label: "Rentang Kustom" },
   ];
+
+  function applyCustomRange(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
+      setMessage("Pilih rentang tanggal yang valid; tanggal mulai harus sebelum atau sama dengan tanggal akhir.");
+      return;
+    }
+    setAppliedRange({ start: rangeStart, end: rangeEnd });
+    setPeriod("custom");
+    setMessage("");
+  }
+
+  const periodLabel = period === "today"
+    ? "hari ini"
+    : period === "week"
+      ? "7 hari terakhir"
+      : period === "month"
+        ? "bulan ini"
+        : period === "custom" && appliedRange
+          ? `${appliedRange.start} – ${appliedRange.end}`
+          : "semua periode";
 
   return (
     <div className="space-y-6">
       <PageHeading eyebrow="Koperasi pesantren" title="Laporan penjualan & SHU" description="Pantau omzet, modal barang terjual, dan laba kotor dari transaksi kasir tersimpan." />
       <CooperativeNav active="/koperasi/laporan" />
       {message && <FormMessage>{message}</FormMessage>}
-      <section className="flex flex-col gap-4 rounded-3xl border border-[#e5e7eb] bg-white p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-        <div><h2 className="text-sm font-bold">Periode laporan</h2><p className="mt-1 text-[11px] text-[#757693]">Ringkasan dihitung berdasarkan waktu transaksi kasir.</p></div>
-        <PillTabs label="Periode laporan SHU" value={period} options={periodOptions} onChange={setPeriod} />
+      <section className="flex flex-col gap-4 rounded-3xl border border-[#e5e7eb] bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="text-sm font-bold">Periode laporan</h2><p className="mt-1 text-[11px] text-[#757693]">Ringkasan dihitung berdasarkan waktu transaksi kasir.</p></div>
+          <PillTabs label="Periode laporan SHU" value={period} options={periodOptions} onChange={setPeriod} />
+        </div>
+        {period === "custom" && (
+          <form onSubmit={applyCustomRange} className="grid gap-3 border-t border-[#f0f0f5] pt-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="text-xs font-semibold text-[#55566f]">Tanggal Mulai
+              <input type="date" required value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-[#e5e7eb] bg-white px-3 text-sm outline-none focus:border-[#4457ff]" />
+            </label>
+            <label className="text-xs font-semibold text-[#55566f]">Tanggal Akhir
+              <input type="date" required min={rangeStart || undefined} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-[#e5e7eb] bg-white px-3 text-sm outline-none focus:border-[#4457ff]" />
+            </label>
+            <button type="submit" className="inline-flex min-h-11 items-center justify-center rounded-full bg-gradient-to-r from-[#4457ff] to-[#7583fd] px-5 text-xs font-semibold text-white transition hover:-translate-y-0.5">
+              Terapkan Filter
+            </button>
+          </form>
+        )}
       </section>
       <section className="grid gap-4 sm:grid-cols-3">
-        <MetricCard label="Omzet penjualan" value={formatRupiah(revenue)} detail={`${filteredSales.length} transaksi · ${period === "today" ? "hari ini" : period === "month" ? "bulan ini" : "semua periode"}`} icon="store" />
+        <MetricCard label="Omzet penjualan" value={formatRupiah(revenue)} detail={`${filteredSales.length} transaksi · ${periodLabel}`} icon="store" />
         <MetricCard label="Total HPP / modal" value={formatRupiah(cost)} detail="Harga modal snapshot item terjual" icon="wallet" tone="bg-[#fff4e7] text-[#bd7627]" />
         <MetricCard label="Laba kotor / SHU" value={formatRupiah(profit)} detail="Omzet dikurangi total HPP" icon="trending-up" tone="bg-[#e8f5f0] text-[#25815e]" />
       </section>
