@@ -269,9 +269,11 @@ Seluruh sistem NAIS berjalan pada lapis gratis (*Free-Tier*) industri modern tan
 7. **`komponen_iuran`**: Master pos tagihan, nama pos (Makan, Laundry, Listrik, Air, Gas, Poskestren, Sarpras), kategori (`pribadi`/`bersama`), dan tarif baku.
 8. **`tagihan_santri`**: Rekap tagihan bulanan per santri, bulan, tahun, total kewajiban, total terbayar, dan flag status lunas.
 9. **`pembayaran_iuran`**: Riwayat transaksi pembayaran SPP, nominal, metode bayar (Tunai/Transfer), bukti setoran, dan staf penerima.
-10. **`produk_koperasi`**: Master stok barang toko, kode SKU/barcode, nama item, satuan, HPP beli, harga jual ke santri, dan sisa stok fisik.
-11. **`penjualan_koperasi`**: Header nota transaksi kasir, tanggal, no struk, kasir pengampu, pembeli santri/umum, total belanja, total HPP modal, total margin laba, tunai diterima, dan kembalian.
-12. **`penjualan_koperasi_detail`**: Rincian barang per struk nota, ID produk, kuantitas terjual, subtotal, dan snapshot harga.
+10. **`produk_koperasi`**: Master stok barang toko, SKU dan barcode unik, kategori, nama item, satuan, HPP beli, harga jual, sisa stok, batas minimum (`min_stok`), dan URL foto opsional.
+11. **`transaksi_penjualan`**: Header nota transaksi kasir, tanggal, no struk, kasir, pembeli santri/umum, total belanja, HPP, laba kotor, tunai diterima, dan kembalian.
+12. **`transaksi_penjualan_detail`**: Snapshot produk, SKU, kuantitas, subtotal, harga jual satuan, dan harga modal saat transaksi.
+
+Transaksi POS disimpan melalui RPC atomik agar snapshot penjualan, pengurangan stok, jurnal kas masuk, dan saldo rekening tunai selalu konsisten. Migrasi koperasi menambahkan kebijakan akses peran staf/bendahara dan tabel transaksi tersebut.
 
 ---
 

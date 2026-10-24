@@ -1,1 +1,86 @@
 @import "tailwindcss";
+
+:root {
+  --color-lavender-canvas: #f3f5ff;
+  --color-card-white: #ffffff;
+  --color-ink: #181c31;
+  --color-muted-iris: #757693;
+  --color-border-mist: #e5e7eb;
+  --color-hover-iris: #6b7280;
+  --color-soft-blue-wash: #dbeafe;
+  --color-brand-violet: #4457ff;
+  --color-brand-violet-light: #7583fd;
+  --color-shadow-violet: #c7c8e2;
+
+  --background: #f3f5ff;
+  --foreground: #181c31;
+  --surface: #ffffff;
+  --muted: #757693;
+  --border: #e5e7eb;
+  --primary: #4457ff;
+}
+
+@theme inline {
+  --color-lavender-canvas: var(--color-lavender-canvas);
+  --color-card-white: var(--color-card-white);
+  --color-ink: var(--color-ink);
+  --color-muted-iris: var(--color-muted-iris);
+  --color-border-mist: var(--color-border-mist);
+  --color-hover-iris: var(--color-hover-iris);
+  --color-soft-blue-wash: var(--color-soft-blue-wash);
+  --color-brand-violet: var(--color-brand-violet);
+  --color-brand-violet-light: var(--color-brand-violet-light);
+  --color-shadow-violet: var(--color-shadow-violet);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+
+  --radius-xl: 12px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+}
+
+body {
+  background-color: var(--color-lavender-canvas);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.backdrop-enter {
+  animation: backdrop-enter 160ms ease-out both;
+}
+
+.modal-enter-up {
+  animation: modal-enter-up 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.drawer-enter {
+  animation: drawer-enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-enter-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes drawer-enter {
+  from { opacity: 0.7; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop-enter,
+  .modal-enter-up,
+  .drawer-enter {
+    animation-duration: 1ms;
+  }
+}
