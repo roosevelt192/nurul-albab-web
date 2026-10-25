@@ -236,7 +236,7 @@ export default function Home() {
           </div>
           <div className="mt-8 flex items-center gap-3 text-sm text-slate-500">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-[#4457ff] shadow-sm"><Icon name="users" size={18} /></span>
-            <span><strong className="font-bold text-slate-900">{activeStudents === null ? "—" : activeStudents.toLocaleString("id-ID")}</strong> santri aktif bertumbuh bersama</span>
+            <span><strong className="font-bold text-slate-900"></strong> santri aktif bertumbuh bersama</span>
           </div>
           <blockquote className="mt-6 max-w-xl rounded-3xl border border-[#e5e7eb] bg-white/80 p-4">
             <Icon name="quote" size={17} className="text-emerald-700" />
