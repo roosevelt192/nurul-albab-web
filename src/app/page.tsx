@@ -176,7 +176,7 @@ export default function Home() {
 
           <div className="hidden items-center gap-2 lg:flex">
             <Link href="/wali" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-100">
-              <Icon name="parents" size={17} /> Portal Wali
+              <Icon name="parents" size={17} /> Portal Wali Santri
             </Link>
             <Link href="/login" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#4457ff] to-[#7583fd] px-4 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(68,87,255,0.25)]">
               Masuk Sistem (NAIS) <Icon name="arrow-right" size={15} />

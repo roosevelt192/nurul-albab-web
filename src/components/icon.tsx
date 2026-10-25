@@ -21,9 +21,13 @@ const iconPaths = {
   ),
   "utensils-crossed": (
     <>
-      <path d="m3 3 18 18" />
-      <path d="M17 3a5 5 0 0 0-5 5v1h5V3Z" />
-      <path d="M17 9v12M7 3v5a3 3 0 0 0 6 0V3M10 11v10" />
+      {/* Garpu di sisi kiri */}
+      <path d="M5 3v5a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V3" />
+      <path d="M7 10v11" />
+      <path d="M7 3v3" />
+      {/* Sendok di sisi kanan */}
+      <path d="M15 3a3 3 0 0 0-3 3c0 2.5 1.5 4 3 4s3-1.5 3-4a3 3 0 0 0-3-3Z" />
+      <path d="M15 10v11" />
     </>
   ),
   pencil: (
