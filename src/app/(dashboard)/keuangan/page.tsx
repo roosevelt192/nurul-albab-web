@@ -102,7 +102,6 @@ function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-// Perhitungan hierarki alokasi iuran (mendukung cicilan & pembayaran beberapa bulan sekaligus)
 function calculateHierarchy(paidAmount: number, caps = DEFAULT_ENVELOPE_CAPS) {
   const oneCycle = caps.listrik + caps.gas + caps.kesehatan + caps.kas_wajib + caps.kas_kamar + caps.tak_terduga;
   const remaining = Math.max(0, paidAmount);
@@ -189,18 +188,15 @@ export default function KeuanganPage() {
   const [message, setMessage] = useState("");
   const [modal, setModal] = useState<Modal>(null);
 
-  // State Tanggal Stabil (Aman dari SSR Prerender Error Next.js 16)
   const [todayDate, setTodayDate] = useState("2026-10-26");
   const [activeMonth, setActiveMonth] = useState(10);
   const [activeYear, setActiveYear] = useState(2026);
 
-  // Form states Mutasi
   const [movementAccountType, setMovementAccountType] = useState<"pondok" | "bendahara">("bendahara");
   const [movementType, setMovementType] = useState<"debit" | "kredit">("kredit");
   const [movementPos, setMovementPos] = useState<string>("listrik");
   const [customPosName, setCustomPosName] = useState("");
 
-  // Form states Pembayaran
   const [payStudentId, setPayStudentId] = useState("");
   const [payMonth, setPayMonth] = useState("10");
   const [payYear, setPayYear] = useState("2026");
@@ -208,14 +204,12 @@ export default function KeuanganPage() {
   const [payMethod, setPayMethod] = useState<"tunai" | "transfer">("tunai");
   const [payKeterangan, setPayKeterangan] = useState("");
 
-  // Detail & Edit Tagihan Santri
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<Student | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<UnifiedInvoice | null>(null);
   const [editTotalAmount, setEditTotalAmount] = useState<number>(85000);
   const [editKeterangan, setEditKeterangan] = useState("");
   const [selectedPayment, setSelectedPayment] = useState<UnifiedPayment | null>(null);
 
-  // Filter Mutasi
   const [cashQuery, setCashQuery] = useState("");
   const [cashFilterCategory, setCashFilterCategory] = useState("Semua kategori");
   const [cashMonthFilter, setCashMonthFilter] = useState("Semua bulan");
@@ -223,15 +217,12 @@ export default function KeuanganPage() {
   const [cashSortOrder, setCashSortOrder] = useState<"desc" | "asc">("desc");
   const [cashPage, setCashPage] = useState(1);
 
-  // Filter Santri
   const [studentFinanceQuery, setStudentFinanceQuery] = useState("");
   const [studentFinanceStatus, setStudentFinanceStatus] = useState("Semua status");
   const [studentPage, setStudentPage] = useState(1);
 
-  // Kunci pencegah race-condition saat auto-provisioning tagihan
   const isProvisioningRef = useRef(false);
 
-  // Inisialisasi tanggal riil setelah komponen dipasang di browser
   useEffect(() => {
     const iso = getTodayISO();
     const [yStr, mStr] = iso.split("-");
@@ -244,12 +235,10 @@ export default function KeuanganPage() {
     setPayYear(String(y));
   }, []);
 
-  // Fungsi Utama Pemuat Data Keuangan
   const loadFinanceData = useCallback(async () => {
     setIsLoading(true);
     const supabase = createClient();
 
-    // 1. Muat pengaturan komponen iuran terlebih dahulu
     let activeCaps = { ...DEFAULT_ENVELOPE_CAPS };
     const { data: compData } = await supabase.from("komponen_iuran").select("*").eq("is_active", true);
     if (compData && compData.length > 0) {
@@ -277,7 +266,6 @@ export default function KeuanganPage() {
       activeCaps.kas_kamar +
       activeCaps.tak_terduga;
 
-    // 2. Ambil seluruh tabel transaksi
     const [accountResult, studentResult, invoiceResult, paymentResult, cashResult] = await Promise.all([
       supabase.from("rekening_kas").select("*"),
       supabase.from("santri").select("id, nis, nama_lengkap, status").neq("status", "pending_ppdb"),
@@ -288,7 +276,6 @@ export default function KeuanganPage() {
 
     let rawAccounts = (accountResult.data ?? []) as unknown as RawFinanceRow[];
 
-    // Pastikan 2 rekening utama benar-benar ada di database Supabase (bukan sekadar objek palsu di memori)
     const hasPondok = rawAccounts.some((a) => rawString(a, "name", rawString(a, "nama_kas")).toLowerCase().includes("pondok"));
     const hasBendahara = rawAccounts.some((a) => rawString(a, "name", rawString(a, "nama_kas")).toLowerCase().includes("bendahara"));
 
@@ -304,25 +291,35 @@ export default function KeuanganPage() {
       }
     }
 
-    // Normalisasi Jurnal Kas (Dengan proteksi transaksi penjualan POS agar selalu masuk / debit)
+    // Identifikasi ID Kas Pondok untuk merutekan transaksi penjualan POS secara tepat
+    const pondokAccountRow = rawAccounts.find((a) =>
+      rawString(a, "name", rawString(a, "nama_kas")).toLowerCase().includes("pondok")
+    );
+    const resolvedPondokId = pondokAccountRow ? rawString(pondokAccountRow, "id") : "";
+
+    // Normalisasi Jurnal Kas: Semua penjualan POS dijamin masuk ke Kas Pondok sebagai Debit
     const mappedEntries: UnifiedCashEntry[] = ((cashResult.data ?? []) as unknown as RawFinanceRow[]).map((e) => {
       const id = rawString(e, "id");
       const proofNumber = rawString(e, "proof_number") || rawString(e, "nomor_bukti") || `TRX-${id.slice(0, 8)}`;
       const rawCategory = rawString(e, "category") || rawString(e, "kategori") || "Operasional";
       const rawDesc = rawString(e, "description") || rawString(e, "keterangan") || "-";
       const rawType = rawString(e, "type").toLowerCase();
+      let accId = rawString(e, "account_id") || rawString(e, "rekening_id");
 
-      // Transaksi dari kasir POS / Penjualan Toko Koperasi adalah hakikatnya pemasukan (debit)
       const isPosSale =
         proofNumber.toUpperCase().startsWith("POS-") ||
         rawCategory.toLowerCase().includes("penjualan") ||
         rawDesc.toLowerCase().includes("penjualan");
 
+      if (isPosSale && resolvedPondokId) {
+        accId = resolvedPondokId;
+      }
+
       const finalType: "debit" | "kredit" = isPosSale ? "debit" : (rawType === "kredit" ? "kredit" : "debit");
 
       return {
         id,
-        account_id: rawString(e, "account_id") || rawString(e, "rekening_id"),
+        account_id: accId,
         transaction_date: rawString(e, "transaction_date") || rawString(e, "tanggal") || "2026-10-26",
         proof_number: proofNumber,
         type: finalType,
@@ -335,17 +332,14 @@ export default function KeuanganPage() {
       };
     });
 
-    // Normalisasi Akun Kas
     const mappedAccounts: UnifiedAccount[] = rawAccounts.map((a) => {
       const id = rawString(a, "id");
       const opening = rawNumber(a, "opening_balance", rawNumber(a, "saldo_awal", 0));
-      // Hitung saldo dari jurnal_kas untuk memastikan keakuratan mutlak
       const journalSum = mappedEntries
         .filter((e) => e.account_id === id)
         .reduce((acc, e) => acc + (e.type === "debit" ? e.amount : -e.amount), 0);
 
       const dbBalance = rawNumber(a, "balance", rawNumber(a, "saldo", 0));
-      // Jika ada jurnal untuk akun ini, gunakan hasil perhitungan jurnal + saldo awal
       const hasJournal = mappedEntries.some((e) => e.account_id === id);
       const computedBalance = hasJournal ? opening + journalSum : dbBalance;
 
@@ -362,7 +356,6 @@ export default function KeuanganPage() {
     let rawInvoices = (invoiceResult.data ?? []) as unknown as RawFinanceRow[];
     const activeStudents = (studentResult.data ?? []).filter((s) => s.status === "aktif");
 
-    // 3. Auto-Provisioning Tagihan Bulan Berjalan (Dilindungi Lock agar tidak pernah duplikat)
     const isoNow = getTodayISO();
     const curYear = Number(isoNow.slice(0, 4));
     const curMonth = Number(isoNow.slice(5, 7));
@@ -455,7 +448,6 @@ export default function KeuanganPage() {
     void loadFinanceData();
   }, [loadFinanceData]);
 
-  // Identifikasi Akun Pondok & Bendahara (Mendukung penggabungan jika sempat ada >1 akun serupa)
   const pondokAccounts = useMemo(() => accounts.filter((a) => a.name.toLowerCase().includes("pondok")), [accounts]);
   const bendaharaAccounts = useMemo(() => accounts.filter((a) => a.name.toLowerCase().includes("bendahara")), [accounts]);
 
@@ -471,11 +463,9 @@ export default function KeuanganPage() {
   const studentMap = useMemo(() => new Map(students.map((s) => [s.id, s])), [students]);
   const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
-  // KALKULASI 6 AMPLOP VIRTUAL YANG AKURAT & KONSISTEN
   const envelopeCalculated = useMemo(() => {
     const collected = { listrik: 0, gas: 0, kesehatan: 0, kas_wajib: 0, kas_kamar: 0, tak_terduga: 0 };
 
-    // 1. Hitung dari seluruh pembayaran santri yang masuk
     for (const inv of invoices) {
       if (inv.paid_amount > 0) {
         const alloc = calculateHierarchy(inv.paid_amount, envelopeCaps);
@@ -488,7 +478,6 @@ export default function KeuanganPage() {
       }
     }
 
-    // 2. Hitung pemasukan/pengeluaran manual di Kas Bendahara
     const spent = { listrik: 0, gas: 0, kesehatan: 0, kas_kamar: 0, tak_terduga: 0 };
     let manualDebitBendahara = 0;
 
@@ -496,8 +485,10 @@ export default function KeuanganPage() {
       const isBendahara = bendaharaIds.has(e.account_id);
       if (!isBendahara) continue;
 
-      if (e.type === "debit" && !e.proof_number.startsWith("PAY-") && e.category !== "Iuran Santri") {
-        // Jika ada pemasukan manual di luar iuran santri ke Kas Bendahara, tambahkan ke cadangan tak terduga
+      // Pengecekan ketat: Transaksi POS koperasi tidak boleh masuk ke perhitungan amplop bendahara
+      const isPos = e.proof_number.toUpperCase().startsWith("POS-") || e.category.toLowerCase().includes("penjualan");
+
+      if (e.type === "debit" && !e.proof_number.startsWith("PAY-") && e.category !== "Iuran Santri" && !isPos) {
         manualDebitBendahara += e.amount;
       } else if (e.type === "kredit" && !e.proof_number.startsWith("TRF-") && e.pos_anggaran !== "kas_wajib") {
         const cat = (e.pos_anggaran || e.category || "").toLowerCase();
@@ -523,7 +514,6 @@ export default function KeuanganPage() {
     const saldoKasKamar = Math.max(0, collected.kas_kamar - spent.kas_kamar);
     const saldoTakTerduga = Math.max(0, collected.tak_terduga + manualDebitBendahara - spent.tak_terduga);
 
-    // Total fisik uang yang ada di 5 amplop aktif Bendahara
     const totalAmplopAktif = saldoListrik + saldoGas + saldoKesehatan + saldoKasKamar + saldoTakTerduga;
 
     return {
@@ -539,7 +529,6 @@ export default function KeuanganPage() {
     };
   }, [invoices, cashEntries, bendaharaIds, envelopeCaps]);
 
-  // DAFTAR KEUANGAN BERBASIS SANTRI
   const studentFinanceList = useMemo(() => {
     return students.map((s) => {
       const studentInvoices = invoices.filter((inv) => inv.santri_id === s.id);
@@ -559,7 +548,6 @@ export default function KeuanganPage() {
     });
   }, [students, invoices, activeMonth, activeYear]);
 
-  // Filter Daftar Santri
   const filteredStudents = useMemo(() => {
     const q = studentFinanceQuery.trim().toLowerCase();
     return studentFinanceList.filter((item) => {
@@ -575,7 +563,6 @@ export default function KeuanganPage() {
   const visibleStudents = filteredStudents.slice((studentPage - 1) * pageSize, studentPage * pageSize);
   const pageCountStudent = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
 
-  // Filter Mutasi Kas
   const filteredCash = useMemo(() => {
     const q = cashQuery.trim().toLowerCase();
     return cashEntries.filter((e) => {
@@ -599,7 +586,6 @@ export default function KeuanganPage() {
   const visibleCash = filteredCash.slice((cashPage - 1) * pageSize, cashPage * pageSize);
   const pageCountCash = Math.max(1, Math.ceil(filteredCash.length / pageSize));
 
-  // SUBMIT MUTASI KAS MANUAL
   async function submitMovement(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -662,7 +648,6 @@ export default function KeuanganPage() {
     setIsSaving(false);
   }
 
-  // SUBMIT PEMBAYARAN IURAN SANTRI (DENGAN ERROR HANDLING KETAT)
   async function submitDirectPayment(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!payStudentId || payAmountInput <= 0 || !kasBendahara) {
@@ -728,7 +713,6 @@ export default function KeuanganPage() {
     const newAlloc = calculateHierarchy(newPaid, envelopeCaps);
     const kasWajibToAdd = Math.max(0, newAlloc.kasWajib - prevAlloc.kasWajib);
 
-    // 1. Update status & terbayar pada tagihan_santri
     const { error: errUpdInv } = await supabase
       .from("tagihan_santri")
       .update({ paid_amount: newPaid, is_paid: isPaidNow } as never)
@@ -740,7 +724,6 @@ export default function KeuanganPage() {
       return;
     }
 
-    // 2. Simpan histori ke pembayaran_iuran
     const { data: pData, error: errPay } = await supabase
       .from("pembayaran_iuran")
       .insert([
@@ -763,7 +746,6 @@ export default function KeuanganPage() {
     const studentName = studentMap.get(payStudentId)?.nama_lengkap ?? "Santri";
     const stamp = Date.now().toString().slice(-6);
 
-    // 3. Catat uang masuk (Debit) ke Kas Bendahara
     const { error: errJurnalBendahara } = await supabase.from("jurnal_kas").insert([
       {
         account_id: kasBendahara.id,
@@ -783,7 +765,6 @@ export default function KeuanganPage() {
       return;
     }
 
-    // 4. Jika ada porsi Kas Wajib: Transfer Real-Time dari Kas Bendahara ke Kas Pondok
     if (kasWajibToAdd > 0 && kasPondok) {
       const { error: errTrfOut } = await supabase.from("jurnal_kas").insert([
         {
@@ -828,7 +809,6 @@ export default function KeuanganPage() {
         .eq("id", kasPondok.id);
     }
 
-    // 5. Update saldo akhir Kas Bendahara (Satu kali operasi bersih)
     const netBendaharaIncrease = payAmountInput - kasWajibToAdd;
     await supabase
       .from("rekening_kas")
@@ -859,7 +839,6 @@ export default function KeuanganPage() {
     setIsSaving(false);
   }
 
-  // SIMPAN EDIT TAGIHAN / DISPENSASI
   async function submitEditInvoice(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!editingInvoice) return;
@@ -890,7 +869,6 @@ export default function KeuanganPage() {
   const paymentInvoice = selectedPayment ? invoices.find((i) => i.id === selectedPayment.invoice_id) : undefined;
   const paymentStudent = paymentInvoice ? studentMap.get(paymentInvoice.santri_id) : undefined;
 
-  // Saldo Kas Bendahara yang ditampilkan di kartu utama (selalu klop dengan jurnal & amplop)
   const displayBendaharaBalance = totalSaldoBendahara > 0 ? totalSaldoBendahara : envelopeCalculated.totalDanaBendahara;
 
   const tabs = [
@@ -902,7 +880,6 @@ export default function KeuanganPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl min-w-0 space-y-3.5 px-2.5 py-3 sm:space-y-6 sm:px-6 sm:py-6">
-      {/* 1. HEADER */}
       <PageHeading
         eyebrow="Keuangan & Usaha Pesantren"
         title="Sistem Keuangan"
@@ -931,9 +908,7 @@ export default function KeuanganPage() {
 
       {message && <FormMessage>{message}</FormMessage>}
 
-      {/* 2. KARTU SALDO REKENING */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {/* KAS PONDOK */}
         <article className="rounded-2xl border border-blue-200/80 bg-gradient-to-br from-white to-blue-50/40 p-4 shadow-xs sm:p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Kas Pondok (Operasional)</span>
@@ -952,7 +927,6 @@ export default function KeuanganPage() {
           </div>
         </article>
 
-        {/* KAS BENDAHARA */}
         <article className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-white to-emerald-50/40 p-4 shadow-xs sm:p-5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Kas Bendahara (Iuran)</span>
@@ -969,7 +943,6 @@ export default function KeuanganPage() {
           </div>
         </article>
 
-        {/* IURAN BULAN INI */}
         <article className="col-span-1 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs sm:col-span-2 sm:p-5 lg:col-span-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Iuran Santri Bulan Ini</span>
@@ -990,12 +963,10 @@ export default function KeuanganPage() {
         </article>
       </section>
 
-      {/* 3. TABS SELECTOR */}
       <section className="rounded-2xl border border-slate-200/80 bg-white p-2 sm:p-3">
         <PillTabs label="Modul Keuangan" value={tab} options={tabs} onChange={(v) => { setTab(v); setMessage(""); }} />
       </section>
 
-      {/* 4. PANTAUAN 6 POS AMPLOP VIRTUAL */}
       {(tab === "kas_bendahara" || tab === "overview") && (
         <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs sm:p-5">
           <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
@@ -1035,7 +1006,6 @@ export default function KeuanganPage() {
         </section>
       )}
 
-      {/* 5. VIEW BUKU KAS (RIWAYAT MUTASI) */}
       {tab !== "invoices" && (
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs">
           <div className="p-3.5 sm:p-5">
@@ -1160,7 +1130,6 @@ export default function KeuanganPage() {
         </section>
       )}
 
-      {/* 6. DAFTAR KEUANGAN BERBASIS SANTRI */}
       {tab === "invoices" && (
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs">
           <div className="p-3.5 sm:p-5">
@@ -1282,7 +1251,6 @@ export default function KeuanganPage() {
         </section>
       )}
 
-      {/* MODAL 1: CATAT MUTASI */}
       {modal === "movement" && (
         <ModalFrame title="Catat Mutasi Kas" description="Pencatatan pemasukan atau pengeluaran kas pesantren" onClose={() => setModal(null)}>
           <form onSubmit={submitMovement} className="mt-4 space-y-3">
@@ -1375,7 +1343,6 @@ export default function KeuanganPage() {
         </ModalFrame>
       )}
 
-      {/* MODAL 2: BAYAR IURAN */}
       {modal === "payment" && (
         <ModalFrame title="Pencatatan Pembayaran Iuran" description="Pilih santri, periode, dan masukkan nominal yang diterima" onClose={() => setModal(null)}>
           <form onSubmit={submitDirectPayment} className="mt-4 space-y-3">
@@ -1430,7 +1397,6 @@ export default function KeuanganPage() {
               </div>
             </div>
 
-            {/* SIMULASI HIERARKI AMPLOP */}
             <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
               <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Simulasi Alokasi Amplop:</p>
               {(() => {
@@ -1465,7 +1431,6 @@ export default function KeuanganPage() {
         </ModalFrame>
       )}
 
-      {/* MODAL 3: RINCIAN KEUANGAN SANTRI */}
       {modal === "student_detail" && selectedStudentForDetail && (
         <ModalFrame
           title={`Buku Iuran: ${selectedStudentForDetail.nama_lengkap}`}
@@ -1556,7 +1521,6 @@ export default function KeuanganPage() {
         </ModalFrame>
       )}
 
-      {/* MODAL 4: EDIT TAGIHAN / DISPENSASI */}
       {modal === "edit_invoice" && editingInvoice && (
         <ModalFrame title="Sesuaikan Tagihan Santri" description="Atur nominal khusus (beasiswa/keringanan)" onClose={() => setModal("student_detail")}>
           <form onSubmit={submitEditInvoice} className="mt-4 space-y-3">
@@ -1598,7 +1562,6 @@ export default function KeuanganPage() {
         </ModalFrame>
       )}
 
-      {/* MODAL KUITANSI PEMBAYARAN */}
       {selectedPayment && paymentInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
