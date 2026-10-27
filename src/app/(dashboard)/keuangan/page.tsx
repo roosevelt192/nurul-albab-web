@@ -304,18 +304,31 @@ export default function KeuanganPage() {
       }
     }
 
-    // Normalisasi Jurnal Kas terlebih dahulu agar bisa memvalidasi saldo akun
+    // Normalisasi Jurnal Kas (Dengan proteksi transaksi penjualan POS agar selalu masuk / debit)
     const mappedEntries: UnifiedCashEntry[] = ((cashResult.data ?? []) as unknown as RawFinanceRow[]).map((e) => {
       const id = rawString(e, "id");
+      const proofNumber = rawString(e, "proof_number") || rawString(e, "nomor_bukti") || `TRX-${id.slice(0, 8)}`;
+      const rawCategory = rawString(e, "category") || rawString(e, "kategori") || "Operasional";
+      const rawDesc = rawString(e, "description") || rawString(e, "keterangan") || "-";
+      const rawType = rawString(e, "type").toLowerCase();
+
+      // Transaksi dari kasir POS / Penjualan Toko Koperasi adalah hakikatnya pemasukan (debit)
+      const isPosSale =
+        proofNumber.toUpperCase().startsWith("POS-") ||
+        rawCategory.toLowerCase().includes("penjualan") ||
+        rawDesc.toLowerCase().includes("penjualan");
+
+      const finalType: "debit" | "kredit" = isPosSale ? "debit" : (rawType === "kredit" ? "kredit" : "debit");
+
       return {
         id,
         account_id: rawString(e, "account_id") || rawString(e, "rekening_id"),
         transaction_date: rawString(e, "transaction_date") || rawString(e, "tanggal") || "2026-10-26",
-        proof_number: rawString(e, "proof_number") || rawString(e, "nomor_bukti") || `TRX-${id.slice(0, 8)}`,
-        type: (rawString(e, "type") === "kredit" ? "kredit" : "debit") as "debit" | "kredit",
-        category: rawString(e, "category") || rawString(e, "kategori") || "Operasional",
-        description: rawString(e, "description") || rawString(e, "keterangan") || "-",
-        amount: rawNumber(e, "amount", rawNumber(e, "nominal")),
+        proof_number: proofNumber,
+        type: finalType,
+        category: rawCategory,
+        description: rawDesc,
+        amount: Math.abs(rawNumber(e, "amount", rawNumber(e, "nominal"))),
         pos_anggaran: rawNullableString(e, "pos_anggaran"),
         created_by: rawNullableString(e, "created_by"),
         created_at: rawNullableString(e, "created_at") ?? undefined,
